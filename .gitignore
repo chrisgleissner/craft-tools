@@ -1,0 +1,19 @@
+# Publish only reviewed build infrastructure. Child app repos stay independent.
+/*
+!/.gitignore
+!/README.md
+!/repositories.txt
+!/craft.sh
+!/run-craft.sh
+!/install-shortcuts.sh
+!/tests/
+/tests/*
+!/tests/test_craft_tool.py
+!/tests/test_launch_scripts.py
+!/tests/test_smoke_apps.py
+!/tests/smoke_apps.py
+!/.github/
+/.github/*
+!/.github/workflows/
+/.github/workflows/*
+!/.github/workflows/test.yml

@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+# Update sibling craft forks and build selected desktop apps. Bash 4+.
+set -Eeuo pipefail
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+usage() {
+    cat <<'EOF'
+Usage: craft.sh [OPTIONS] [APP ...]
+Updates ALL sibling forks from upstream, then builds PhotoCraft by default.
+  --all           Build every registered desktop app
+  --update-only   Update forks without building
+  --no-update     Build existing checkouts without fetching or pushing
+  --no-push       Update local default branches without pushing forks
+  --release       Build optimized release binaries (default: dev profile)
+  --list          List registered apps
+  --jobs N        Cargo compilation jobs (default: 4)
+  -h, --help      Show this help
+Examples:
+  ./craft.sh
+  ./craft.sh photocraft vectorcraft
+  ./craft.sh --all --release
+  ./craft.sh --update-only
+Requires Bash 4+, git, flock, tee, and Rust 1.95.0 (rustup). Tauri apps also
+need Node/npm and Linux WebKit/GTK development packages. RUSTUP_TOOLCHAIN
+can override the toolchain. ArtCraft builds its Tauri app; artcraft-native is
+its separate native variant.
+Feature branches are preserved and builds use the checked-out branch. Updates
+only fast-forward default branches; dirty trees and divergent histories fail
+without resets, rebases, force pushes, stashing, or changing branches.
+Logs: .logs/    Binaries: .build/target/{debug,release}/
+EOF
+}
+APPS=(photocraft craft-launcher vectorcraft filmcraft effectcraft deckcraft pdfcraft designcraft lightcraft wordcraft artcraft artcraft-native figcraft gridcraft soundcraft cadcraft artcraftx craft-repo-status-app)
+update=1 push=1 build=1 all=0 release=0 jobs=${CARGO_BUILD_JOBS:-4}
+selected=()
+while (($#)); do
+    case $1 in
+        --all) all=1;;
+        --update-only) build=0;;
+        --no-update) update=0;;
+        --no-push) push=0;;
+        --release) release=1;;
+        --jobs) shift; (($#)) || { echo 'Missing --jobs value' >&2; exit 2; }; jobs=$1;;
+        --list) printf '%s\n' "${APPS[@]}"; exit 0;;
+        -h|--help) usage; exit 0;;
+        -*) echo "Unknown option: $1" >&2; exit 2;;
+        *) selected+=("$1");;
+    esac
+    shift
+done
+[[ $jobs =~ ^[1-9][0-9]*$ ]] || { echo '--jobs must be a positive integer' >&2; exit 2; }
+if ((all)); then
+    ((${#selected[@]} == 0)) || { echo 'Use --all or app names, not both' >&2; exit 2; }
+    selected=("${APPS[@]}")
+fi
+((${#selected[@]})) || selected=(photocraft)
+for app in "${selected[@]}"; do
+    found=0
+    for known in "${APPS[@]}"; do [[ $app != "$known" ]] || found=1; done
+    ((found)) || { echo "Unknown app: $app (see --list)" >&2; exit 2; }
+done
+mkdir -p "$ROOT/.logs" "$ROOT/.build"
+exec 9>"$ROOT/.build/craft.lock"
+flock -n 9 || { echo 'Another craft.sh run is active' >&2; exit 1; }
+run_id=$(date -u +%Y%m%dT%H%M%S)-$$
+log_dir=$ROOT/.logs/$run_id
+mkdir "$log_dir"
+export RUSTUP_TOOLCHAIN=${RUSTUP_TOOLCHAIN:-1.95.0}
+export CARGO_TARGET_DIR="$ROOT/.build/target"
+export CARGO_BUILD_JOBS="$jobs"
+# Avoid many gigabytes of dependency debug symbols; explicit user settings win.
+export CARGO_PROFILE_DEV_DEBUG=${CARGO_PROFILE_DEV_DEBUG:-0}
+export CARGO_INCREMENTAL=${CARGO_INCREMENTAL:-0}
+if [[ -d $ROOT/craft-fonts ]]; then export CRAFT_FONTS_DIR=${CRAFT_FONTS_DIR:-$ROOT/craft-fonts}; fi
+sync_repo() (
+    set -e
+    local repo=$1 branch current target old remote_head
+    cd "$repo"
+    [[ -z $(git status --porcelain) ]] || { echo 'Refusing to update a dirty checkout' >&2; exit 1; }
+    git remote get-url upstream >/dev/null
+    git fetch --prune --no-tags upstream
+    git fetch --prune --no-tags origin
+    remote_head=$(git ls-remote --symref upstream HEAD)
+    branch=$(awk '$1 == "ref:" && $3 == "HEAD" {sub("refs/heads/", "", $2); print $2; exit}' <<<"$remote_head")
+    [[ -n $branch ]] || { echo 'Cannot determine upstream default branch' >&2; exit 1; }
+    target=refs/remotes/upstream/$branch
+    old=$(git rev-parse --verify "refs/heads/$branch" 2>/dev/null || true)
+    if [[ -n $old ]]; then
+        git merge-base --is-ancestor "$old" "$target" || { echo "Local $branch diverges from upstream" >&2; exit 1; }
+    fi
+    if git show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+        git merge-base --is-ancestor "origin/$branch" "$target" || { echo "Fork $branch diverges from upstream" >&2; exit 1; }
+    fi
+    current=$(git symbolic-ref --quiet --short HEAD || true)
+    if [[ $current == "$branch" ]]; then
+        git merge --ff-only --no-edit "$target"
+    else
+        git branch -f --no-track "$branch" "$target"
+        echo "Preserved current branch ${current:-detached HEAD}; builds use that checkout"
+    fi
+    if ((push)); then git push origin "$target:refs/heads/$branch"; fi
+)
+build_app() (
+    set -e
+    local app=$1 package=$1 repo=$1 binary=$1 profile=debug
+    local flags=(--locked)
+    if ((release)); then flags+=(--release); profile=release; fi
+    case $app in
+        artcraft-native) repo=artcraft; package=artcraft_native; binary=artcraft-native;;
+        craft-launcher) package=artcraft-launcher; binary=artcraft-launcher;;
+        craft-repo-status-app) package=craft-status-app; binary=craft-status-app;;
+    esac
+    cd "$ROOT/$repo"
+    case $app in
+        artcraft|artcraftx)
+            (cd frontend; npm ci; NX_DAEMON=false VITE_ENVIRONMENT_TYPE=production npm exec -- nx run artcraft:build)
+            export SQLX_OFFLINE=true VITE_ENVIRONMENT_TYPE=production
+            export TAURI_FRONTEND_PATH="$PWD/frontend"
+            if [[ $app == artcraft ]]; then
+                export TAURI_APP_PATH="$PWD/crates/desktop/artcraft"
+            else
+                export TAURI_APP_PATH="$PWD/crates/artcraftx"
+            fi
+            flags+=(--features tauri/custom-protocol)
+            ;;
+        craft-repo-status-app)
+            npm ci
+            flags+=(--features tauri/custom-protocol)
+            ;;
+    esac
+    # One Cargo invocation keeps desktop/CLI dependency features unified.
+    local packages=(-p "$package")
+    if [[ -f apps/$app-cli/Cargo.toml ]]; then packages+=(-p "$app-cli"); fi
+    cargo build "${flags[@]}" "${packages[@]}"
+    mkdir -p "$ROOT/bin"
+    ln -sfn "../.build/target/$profile/$binary" "$ROOT/bin/$binary"
+    if [[ -f apps/$app-cli/Cargo.toml ]]; then ln -sfn "../.build/target/$profile/$app-cli" "$ROOT/bin/$app-cli"; fi
+)
+failed=0
+if ((update)); then
+    for repo in "$ROOT"/*; do
+        [[ -d $repo && ( -d $repo/.git || -f $repo/.git ) ]] || continue
+        name=${repo##*/}
+        echo "== Update $name =="
+        # Run as a standalone shell so errexit remains active inside sync_repo.
+        set +e
+        (set -e; sync_repo "$repo") 2>&1 | tee "$log_dir/update-$name.log"
+        statuses=("${PIPESTATUS[@]}")
+        set -e
+        if ((statuses[0] || statuses[1])); then echo "FAILED update: $name"; failed=1; fi
+    done
+fi
+if ((build)); then
+    for app in "${selected[@]}"; do
+        echo "== Build $app =="
+        set +e
+        (set -e; build_app "$app") 2>&1 | tee "$log_dir/build-$app.log"
+        statuses=("${PIPESTATUS[@]}")
+        set -e
+        if ((statuses[0] || statuses[1])); then echo "FAILED build: $app"; failed=1; else echo "BUILT $app"; fi
+    done
+fi
+printf '%s\n' "$failed" >"$log_dir/exit-status"
+echo "Logs: $log_dir"
+exit "$failed"
