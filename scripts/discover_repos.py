@@ -36,13 +36,17 @@ def remote_repo(path, remote):
     return name.lower()
 
 
-def validate_checkout(path, source, login):
+def validate_checkout(path, source, login, details=None):
     if path.is_symlink() or not (path / '.git').exists():
         raise ValueError('Destination exists but is not an independent Git checkout')
     if remote_repo(path, 'upstream') != source.lower():
         raise ValueError('Existing upstream does not match; leaving checkout unchanged')
-    if remote_repo(path, 'origin').split('/')[0] != login.lower():
+    origin = remote_repo(path, 'origin')
+    if origin.split('/')[0] != login.lower():
         raise ValueError('Existing origin is not owned by the authenticated user')
+    details = details if details is not None else gh_json(f'repos/{origin}')
+    if not details.get('fork') or details.get('parent', {}).get('full_name', '').lower() != source.lower():
+        raise ValueError('Origin is not a fork of the expected upstream; leaving checkout unchanged')
 
 
 def provision(root, name, login):
@@ -81,7 +85,7 @@ def provision(root, name, login):
         checkout = Path(tmp) / 'checkout'
         for attempt in range(3):
             try:
-                subprocess.run(['gh', 'repo', 'clone', full_name, str(checkout)], check=True)
+                subprocess.run(['gh', 'repo', 'clone', f'https://github.com/{full_name}.git', str(checkout)], check=True)
                 break
             except subprocess.CalledProcessError:
                 if attempt == 2:
@@ -93,7 +97,9 @@ def provision(root, name, login):
         action = 'set-url' if 'upstream' in remotes else 'add'
         subprocess.run(['git', '-C', str(checkout), 'remote', action, 'upstream',
                         f'https://github.com/{source}.git'], check=True)
-        validate_checkout(checkout, source, login)
+        if remote_repo(checkout, 'origin') != full_name.lower():
+            raise ValueError('Cloned origin does not match the expected fork')
+        validate_checkout(checkout, source, login, details)
         if destination.exists() or destination.is_symlink():
             raise ValueError('Destination appeared during clone; leaving it unchanged')
         checkout.rename(destination)

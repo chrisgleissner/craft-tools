@@ -37,8 +37,9 @@ if args[0]=='api':
         print(json.dumps({'fork':True,'parent':{'full_name':'storytold/'+name}}))
     else: raise RuntimeError(args)
 elif args[:2]==['repo','clone']:
-    if args[2].split('/')[1] in state.get('clone_fail',[]): sys.exit(1)
-    subprocess.run(['git','clone','https://github.com/'+args[2]+'.git',args[3]],check=True)
+    full_name=args[2].removeprefix('https://github.com/').removesuffix('.git')
+    if full_name.split('/')[1] in state.get('clone_fail',[]): sys.exit(1)
+    subprocess.run(['git','clone','https://github.com/'+full_name+'.git',args[3]],check=True)
 else: raise RuntimeError(args)
 '''
 
@@ -186,6 +187,14 @@ class DiscoveryTests(CraftFixture):
         self.advance()
         self.pull(1)
         self.assertEqual(self.head(self.app), old)
+
+    def test_user_owned_origin_for_another_app_is_not_updated(self):
+        self.git('-C', str(self.app), 'config', 'remote.origin.url', 'https://github.com/fixture/othercraft.git')
+        old = self.head(self.app)
+        self.advance()
+        result = self.pull(1)
+        self.assertEqual(self.head(self.app), old)
+        self.assertIn('Origin is not a fork of the expected upstream', result.stdout)
 
     def test_pull_rejects_build_arguments(self):
         for args in [('--no-update',), ('--all',), ('--release',), ('photocraft',)]:

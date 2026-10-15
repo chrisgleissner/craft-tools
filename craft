@@ -2,7 +2,7 @@
 # Update sibling craft forks and build selected desktop apps. Bash 4+.
 set -Eeuo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
-export PATH="$ROOT/.build/tools/node/bin:$PATH:$HOME/.cargo/bin"
+export PATH="$ROOT/.build/tools/node/bin:$PATH:${CARGO_HOME:-$HOME/.cargo}/bin"
 if [[ ${1:-} == setup ]]; then
     shift
     exec bash "$ROOT/scripts/setup-prerequisites.sh" "$ROOT" "$@"

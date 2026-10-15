@@ -23,7 +23,7 @@ packages=(
     libxkbcommon-dev libwayland-dev libx11-dev libx11-xcb-dev libxcursor-dev
     libxrandr-dev libxi-dev libxinerama-dev libgl1-mesa-dev libvulkan-dev
     libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
-    libssl-dev libfontconfig1-dev libfreetype6-dev libasound2-dev libudev-dev
+    libssl-dev libfontconfig-dev libfreetype-dev libasound2-dev libudev-dev
     libdbus-1-dev patchelf xvfb xauth x11-utils imagemagick dbus-x11
     desktop-file-utils libnotify-bin
 )
@@ -32,10 +32,11 @@ for package in "${packages[@]}"; do
     status=$(dpkg-query -W -f='${db:Status-Status}' "$package" 2>/dev/null || true)
     [[ $status == installed ]] || missing+=("$package")
 done
-export PATH="$root/.build/tools/node/bin:$PATH:$HOME/.cargo/bin"
+export PATH="$root/.build/tools/node/bin:$PATH:${CARGO_HOME:-$HOME/.cargo}/bin"
 node_ready() {
     command -v node >/dev/null && command -v npm >/dev/null &&
-        node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)'
+        node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)' &&
+        npm --version >/dev/null 2>&1
 }
 rust_ready() {
     command -v rustup >/dev/null &&

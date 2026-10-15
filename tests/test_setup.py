@@ -19,6 +19,7 @@ with open(os.environ['SETUP_LOG'],'a') as log: log.write(json.dumps([name,args])
 if name=='dpkg-query':
     print('missing' if args[-1] in state.get('missing',[]) else 'installed',end='')
 elif name=='node': sys.exit(int(state.get('node_missing',False)))
+elif name=='npm': sys.exit(int(state.get('npm_broken',False)))
 elif name=='rustup':
     if args[0]=='run': sys.exit(int(state.get('rust_missing',False)))
     if args[:2]==['component','list']: print('clippy-x86_64-unknown-linux-gnu\\nrustfmt-x86_64-unknown-linux-gnu')
@@ -37,7 +38,7 @@ elif name=='apt-get':
 elif name=='curl':
     output=Path(args[args.index('-o')+1])
     if 'https://sh.rustup.rs' in args:
-        output.write_text('#!/bin/sh\\nmkdir -p "$HOME/.cargo/bin"\\ncp "$SETUP_RUSTUP" "$HOME/.cargo/bin/rustup"\\n')
+        output.write_text('#!/bin/sh\\nmkdir -p "${CARGO_HOME:-$HOME/.cargo}/bin"\\ncp "$SETUP_RUSTUP" "${CARGO_HOME:-$HOME/.cargo}/bin/rustup"\\n')
     else: output.write_text('0'*64+'  node-v24.11.0-linux-x64.tar.xz\\n')
 elif name=='sha256sum': sys.exit(int(state.get('checksum_fail',False)))
 elif name=='tar':
@@ -101,6 +102,14 @@ class SetupTests(unittest.TestCase):
         self.run_setup()
         self.assertFalse(any(name in ['sudo', 'apt-get', 'curl'] for name, _ in self.calls()))
 
+    def test_checks_real_packages_instead_of_transitional_aliases(self):
+        self.run_setup('--check', '--no-auth')
+        queried = [args[-1] for name, args in self.calls() if name == 'dpkg-query']
+        self.assertIn('libfreetype-dev', queried)
+        self.assertIn('libfontconfig-dev', queried)
+        self.assertNotIn('libfreetype6-dev', queried)
+        self.assertNotIn('libfontconfig1-dev', queried)
+
     def test_no_auth_never_requests_or_modifies_credentials(self):
         self.state = dict(auth_missing=True)
         self.run_setup('--no-auth')
@@ -114,6 +123,11 @@ class SetupTests(unittest.TestCase):
         self.assertLess(commands.index('sha256sum'), commands.index('tar'))
         self.assertTrue((self.root / '.build/tools/node/bin/node').exists())
         self.assertFalse(list((self.root / '.build/tools').glob('node-install-*')))
+
+    def test_broken_npm_triggers_a_working_local_runtime_install(self):
+        self.state = dict(npm_broken=True)
+        self.run_setup('--no-auth')
+        self.assertTrue((self.root / '.build/tools/node/bin/npm').exists())
 
     def test_checksum_failure_preserves_previous_runtime(self):
         self.state = dict(node_missing=True, checksum_fail=True)
@@ -133,6 +147,13 @@ class SetupTests(unittest.TestCase):
         self.run_setup()
         self.assertTrue((Path(self.env['HOME']) / '.cargo/bin/rustup').exists())
         self.assertTrue(any(name == 'curl' and 'https://sh.rustup.rs' in args for name, args in self.calls()))
+
+    def test_custom_cargo_home_is_respected(self):
+        saved = self.fake / 'saved-rustup'
+        (self.fake / 'rustup').rename(saved)
+        self.env.update(SETUP_RUSTUP=str(saved), CARGO_HOME=str(self.root / 'custom cargo'))
+        self.run_setup('--no-auth')
+        self.assertTrue((Path(self.env['CARGO_HOME']) / 'bin/rustup').exists())
 
     def test_package_install_failure_stops_setup(self):
         self.state = dict(missing=['gh'], apt_fail=True)
