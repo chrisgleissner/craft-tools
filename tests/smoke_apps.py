@@ -97,8 +97,8 @@ def main():
     parser.add_argument('apps', nargs='*')
     parser.add_argument('--profile', choices=['debug', 'release'], default='debug')
     args = parser.parse_args()
-    apps = args.apps or subprocess.check_output([str(ROOT / 'craft.sh'), '--list'], text=True).splitlines()
-    known = subprocess.check_output([str(ROOT / 'craft.sh'), '--list'], text=True).splitlines()
+    apps = args.apps or subprocess.check_output([str(ROOT / 'craft'), '--list'], text=True).splitlines()
+    known = subprocess.check_output([str(ROOT / 'craft'), '--list'], text=True).splitlines()
     if any(app not in known for app in apps):
         parser.error('Unknown app')
     if not os.environ.get('DISPLAY') or re.fullmatch(r'(?:unix)?:0(?:\.\d+)?', os.environ['DISPLAY']):

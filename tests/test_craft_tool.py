@@ -7,15 +7,15 @@ import subprocess
 import tempfile
 import unittest
 
-SCRIPT = Path(__file__).resolve().parents[1] / 'craft.sh'
+SCRIPT = Path(__file__).resolve().parents[1] / 'craft'
 
 
-class CraftToolTests(unittest.TestCase):
+class CraftFixture(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='craft test ')
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
-        shutil.copy2(SCRIPT, self.root / 'craft.sh')
+        shutil.copy2(SCRIPT, self.root / 'craft')
         self.bin = self.root / 'fake-bin'
         self.bin.mkdir()
         self.env = dict(os.environ, GIT_CONFIG_GLOBAL='/dev/null', GIT_CONFIG_NOSYSTEM='1',
@@ -40,7 +40,8 @@ class CraftToolTests(unittest.TestCase):
         # Keep fixture Git repos outside the sibling discovery directory.
         self.workspace = self.root / 'workspace with spaces'
         self.workspace.mkdir()
-        shutil.copy2(SCRIPT, self.workspace / 'craft.sh')
+        shutil.copy2(SCRIPT, self.workspace / 'craft')
+        shutil.copytree(SCRIPT.parent / 'scripts', self.workspace / 'scripts')
         self.app = self.workspace / 'photocraft'
         self.git('clone', str(self.origin), str(self.app))
         self.git('-C', str(self.app), 'remote', 'add', 'upstream', str(self.upstream))
@@ -61,7 +62,7 @@ class CraftToolTests(unittest.TestCase):
         return self.git('-C', str(self.seed), 'rev-parse', 'HEAD')
 
     def run_tool(self, *args, expected=0, **env):
-        result = subprocess.run([str(self.workspace / 'craft.sh'), *args], env=dict(self.env, **env),
+        result = subprocess.run([str(self.workspace / 'craft'), *args], env=dict(self.env, **env),
                                 capture_output=True, text=True, cwd='/tmp', timeout=20)
         self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
         logs = [line[6:] for line in result.stdout.splitlines() if line.startswith('Logs: ')]
@@ -76,6 +77,7 @@ class CraftToolTests(unittest.TestCase):
     def head(self, path, ref='HEAD'):
         return self.git('-C', str(path), 'rev-parse', ref)
 
+class CraftToolTests(CraftFixture):
     def test_default_sync_push_and_build(self):
         new = self.advance()
         self.run_tool()

@@ -12,7 +12,7 @@ case $app in
     *) echo "Unknown app: $app" >&2; exit 2;;
 esac
 if [[ ! -x $root/bin/$binary ]]; then
-    message="$app has not been built. Run $root/craft.sh $app"
+    message="$app has not been built. Run $root/craft $app"
     echo "$message" >&2
     if command -v notify-send >/dev/null; then notify-send 'Craft build needed' "$message" || true; fi
     exit 1

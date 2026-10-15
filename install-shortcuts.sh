@@ -39,14 +39,14 @@ for ident, name, app, icon, categories, wmclass, args in entries:
     if not config.has_section('Desktop Entry'):
         config.add_section('Desktop Entry')
     entry = config['Desktop Entry']
-    entry.update(Type='Application', Name=name, Exec=f'{quote(root / "run-craft.sh")} {app}{args}',
+    entry.update(Type='Application', Name=name, Exec=f'{quote(root / "run-craft")} {app}{args}',
                  Icon=escape_string(root / icon), Terminal='false', StartupNotify='false',
                  StartupWMClass=wmclass, Categories=categories)
     if app == 'photocraft':
         entry.setdefault('GenericName', 'Image Editor')
         entry.setdefault('Comment', 'Edit photos and layered PSD documents')
     if 'TryExec' in entry:
-        entry['TryExec'] = escape_string(root / 'run-craft.sh')
+        entry['TryExec'] = escape_string(root / 'run-craft')
     with target.open('w') as stream:
         config.write(stream, space_around_delimiters=False)
     print(target)

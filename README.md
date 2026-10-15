@@ -1,109 +1,210 @@
-# Craft workspace
+# Craft Tools
 
-`craft.sh` updates every sibling Git fork from its `upstream` default branch and
-pushes that branch to `origin`, then builds the requested desktop apps and their
-CLI companions. The default app is PhotoCraft.
+**Discover, update, build, and launch the Craft desktop apps from one workspace.**
+
+[![Tests](https://github.com/chrisgleissner/craft-tools/actions/workflows/test.yml/badge.svg)](https://github.com/chrisgleissner/craft-tools/actions/workflows/test.yml)
+[![Platform](https://img.shields.io/badge/platform-Linux-blue)](#setup)
+[![Runtime](https://img.shields.io/badge/runtime-Bash%204%2B%20%7C%20Python%203.10%2B-blue)](#setup)
+[![Upstream](https://img.shields.io/badge/upstream-storytold%20Craft-blue)](https://github.com/storytold)
+
+This is an independent build companion for the **[Craft projects published by
+storytold](https://github.com/storytold?tab=repositories&q=craft)**, including
+[PhotoCraft](https://github.com/storytold/photocraft),
+[VectorCraft](https://github.com/storytold/vectorcraft), and
+[Craft Launcher](https://github.com/storytold/craft-launcher).
+The apps and their source code live upstream. This repository contains the scripts
+that manage your forks and local builds; it is not an official Craft distribution.
+
+## Quick start
+
+Check out the **v0.1.0** release using your GitHub access, then run:
 
 ```bash
-./craft.sh                                      # update all forks; build PhotoCraft
-./craft.sh photocraft vectorcraft               # build an explicit set
-./craft.sh --all                                # build all registered desktop apps
-./craft.sh --all --release                      # optimized binaries
-./craft.sh --update-only                        # only synchronize forks
-./craft.sh --no-update craft-launcher           # build without network Git updates
-./craft.sh --no-push photocraft                  # update locally without pushing
-./craft.sh --list
-./run-craft.sh photocraft
-./run-craft.sh craft-launcher
-./install-shortcuts.sh                          # install/update KDE shortcuts
+git clone --branch v0.1.0 --depth 1 \
+    https://github.com/chrisgleissner/craft-tools.git ~/dev/craft
+cd ~/dev/craft
+./craft setup                  # install prerequisites; sign in to GitHub if needed
+./craft pull                   # discover, fork, clone, and update all Craft repos
+./craft                        # build PhotoCraft (the default)
+./run-craft                    # launch PhotoCraft
+```
+
+The repository is private: GitHub access is needed to download it. Run the setup
+command without `sudo`; it requests elevated access only for system packages.
+
+### Release archive
+
+Each version tag runs the tests and publishes a ready-to-extract source archive
+with a checksum on the [Releases page](https://github.com/chrisgleissner/craft-tools/releases).
+If you already use GitHub CLI, you can download and verify it with:
+
+```bash
+gh release download v0.1.0 --repo chrisgleissner/craft-tools \
+    --pattern craft-tools-v0.1.0.tar.gz --pattern SHA256SUMS
+sha256sum --check SHA256SUMS
+tar -xzf craft-tools-v0.1.0.tar.gz
+cd craft-tools-v0.1.0
+./craft setup
+./craft pull
+./craft
+./run-craft
+```
+
+The archive includes executable commands, helpers, docs, and tests. Apps and
+dependencies are downloaded by `setup` and `pull`; prebuilt app binaries are not
+included. To upgrade an archive installation, unpack the next release separately.
+
+## Setup
+
+`./craft setup` automates setup on **Ubuntu/Debian systems with apt**. Run it as
+your normal user; it uses `sudo` only when system packages need installing.
+
+It installs:
+
+- Compilers, Git, GitHub CLI, Python, ShellCheck, and native build libraries.
+- GTK/WebKit dependencies for Tauri apps and Xvfb/ImageMagick for startup tests.
+- Rust **1.95.0**, with rustfmt, Clippy, and the WebAssembly target.
+- Node.js **24.11.0** and npm when no working Node 22+ runtime is available.
+  The downloaded archive is checked against Node's published SHA-256 checksums.
+
+Rust uses your user installation. An automatically installed Node runtime stays
+inside `.build/tools/node` and is used by `craft`; system Node is left in place.
+`RUSTUP_TOOLCHAIN` can select a different Rust toolchain.
+
+Setup starts `gh auth login` when needed and configures Git's GitHub credentials.
+Complete GitHub's browser authorization when prompted. Existing authentication is
+reused; credentials are managed by GitHub CLI and are never stored in this repo.
+For unattended provisioning, `./craft setup --no-auth` installs prerequisites
+without requesting or modifying credentials. Configure authentication before
+running `craft pull`.
+
+To check an existing machine without installing or changing anything:
+
+```bash
+./craft setup --check
+```
+
+## Commands
+
+| Command | What it does |
+| --- | --- |
+| `./craft pull` | Discover upstream Craft repos, fork/clone missing ones, update them all |
+| `./craft` | Update existing forks and build PhotoCraft |
+| `./craft photocraft vectorcraft` | Update existing forks and build the named apps |
+| `./craft --all` | Update existing forks and build all registered desktop targets |
+| `./craft --all --release` | Build all registered targets with the release profile |
+| `./craft --update-only` | Update existing checkouts without discovering or building |
+| `./craft --no-update craft-launcher` | Build from the current checkout without Git updates |
+| `./craft --no-push` | Update locally and build PhotoCraft without pushing default branches |
+| `./craft --list` | List registered desktop targets |
+| `./run-craft craft-launcher` | Launch the latest successful launcher build |
+| `./install-shortcuts.sh` | Install shortcuts; pin launcher beside PhotoCraft on KDE |
+
+Use `--jobs N` to control Cargo parallelism (default **4**). `run-craft` accepts an
+app name followed by arguments to pass through, for example
+`./run-craft photocraft 'photo with spaces.png'`.
+
+### How discovery works
+
+`craft pull` reads **every page** of the live
+[storytold repository listing](https://github.com/storytold?tab=repositories&q=craft).
+It selects names containing `craft`, ignoring case, including shared libraries,
+assets, services, and archived repositories.
+
+For each match, it reuses a valid checkout or creates/reuses your personal fork
+and clones it with `origin` pointing to your fork and `upstream` to storytold.
+It then updates default branches using fast forwards. Run the same command later
+to pick up newly published repositories; no inventory edit is needed.
+
+Empty repositories are reported and retried on the next run. Existing files,
+folders, or checkouts with conflicting remotes are reported and left unchanged.
+A failed repository does not prevent other valid repositories from being handled.
+An API failure returns a failure; it does not silently use an old inventory.
+
+`craft pull --no-push` skips pushing default branches. It still creates missing
+forks, because this workspace builds from your own forks.
+
+**Discovery and build registration are separate.** New repos are downloaded and
+updated automatically. New desktop apps need a verified build recipe before they
+appear in `craft --list` or `craft --all`. `repositories.txt` is a historical
+snapshot, not the source of discovery.
+
+### How updates protect local work
+
+Updates preserve your checked-out feature branch and refuse dirty checkouts or
+divergent default branches. They use no resets, rebases, force pushes, or stashes.
+Builds use the currently checked-out branch. Independent failures are collected;
+the command returns a nonzero status if any stage or log writer fails.
+
+## Workspace layout
+
+```text
+craft/                         # this tooling repository
+├── craft                      # setup, discovery, update, and build command
+├── run-craft                  # app launcher
+├── install-shortcuts.sh
+├── scripts/                   # discovery and prerequisite helpers
+├── tests/
+├── photocraft/                # independent fork checkout (ignored by this repo)
+├── craft-launcher/            # independent fork checkout
+├── ...                        # other discovered Craft repos
+├── bin/                       # links to the latest successful builds
+├── .build/                    # shared Cargo output and local Node runtime
+└── .logs/                     # per-run logs, status, and startup screenshots
+```
+
+For a branch checkout, update the tooling with `git pull --ff-only` at the root.
+The versioned quick start checks out a fixed tag; use another release checkout to
+upgrade it. `craft` updates child app repositories. The Git allowlist excludes app sources, credentials,
+builds, caches, logs, desktop backups, and local validation reports.
+
+## Build details
+
+- PhotoCraft is the default. `craft-launcher` builds `artcraft-launcher`;
+  `craft-repo-status-app` builds `craft-status-app`.
+- `artcraft` builds the original Tauri app; `artcraft-native` builds the separate
+  native app from the same checkout. Tauri frontends are built and embedded.
+- Desktop and available CLI companions build together, using locked dependencies
+  and the shared `.build/target` directory.
+- Dev builds disable debug symbols and incremental compilation by default.
+  `CARGO_PROFILE_DEV_DEBUG` and `CARGO_INCREMENTAL` override these defaults.
+- A sibling `craft-fonts` checkout supplies fonts unless `CRAFT_FONTS_DIR` is set.
+- Support repos are synchronized without being treated as desktop targets.
+  `placeholder-artcraft` is an incomplete historical snapshot, so it is sync-only.
+  Browser and backend services are outside the desktop build selection.
+
+Runs write `.logs/<run>/exit-status` and separate logs for each stage. Concurrent
+build, pull, and setup runs are refused with a shared lock.
+
+After moving the workspace or upgrading from the old `run-craft.sh` command,
+rerun `./install-shortcuts.sh`. It preserves custom desktop fields and backs up
+existing entries. Workspace paths containing `%` or `=` are unsupported by the
+shortcut installer; its escaping follows the
+[desktop entry specification](https://specifications.freedesktop.org/desktop-entry/latest/exec-variables.html).
+
+## Tests and CI
+
+GitHub Actions runs **the complete tooling regression suite, ShellCheck, and a
+fresh Ubuntu prerequisite installation on every push and pull request**, with no
+credentials or cloned apps required.
+Tests use disposable Git repositories and fake GitHub, Cargo, package-manager,
+and download commands. The desktop-entry test also launches a fake app through GIO.
+
+Run the same checks locally:
+
+```bash
 python3 -m unittest discover -s tests -v
-xvfb-run -a -s '-screen 0 1440x1000x24' dbus-run-session -- python3 tests/smoke_apps.py
+shellcheck craft run-craft install-shortcuts.sh scripts/*.sh
 ```
 
-Updates use fast forwards, preserve feature branches, and refuse dirty checkouts
-or divergent default branches. They do not rebase or overwrite local work. Builds
-use each current checkout, so a feature branch is built as checked out even when
-its default branch has just been updated. A failed stage is logged and produces a
-nonzero final status; independent apps still run. Review `.logs/` for details.
-Completed runs record their result in `.logs/<run>/exit-status`.
-Concurrent tool runs are refused with a lock. Build outputs share `.build/target`
-to reuse dependencies; `bin/` points to each last successful build. Scripts and
-binary symlinks can move with this directory; rerun `install-shortcuts.sh` after a
-move so KDE's absolute desktop-entry paths follow it.
-The shortcut installer refuses workspace paths containing `%` or `=` because
-desktop launchers cannot reliably resolve these executable paths.
-
-Requires Bash 4+, Git, flock, tee, rustup with Rust 1.95.0, and the system libraries
-required by each app. `RUSTUP_TOOLCHAIN` overrides the Rust toolchain; `--jobs N`
-controls Cargo jobs (default 4). The dev profile is the default; debug symbols and
-incremental builds are disabled to keep this multi-app target directory smaller.
-Explicit `CARGO_PROFILE_DEV_DEBUG` and `CARGO_INCREMENTAL` values take precedence.
-When present, the sibling `craft-fonts` checkout is used unless `CRAFT_FONTS_DIR`
-is already set. Tauri apps also need Node/npm and WebKit/GTK development packages.
-The script builds their frontend before embedding it in the Rust binary; it does
-not require a globally installed Nx or Tauri CLI and does not create installers.
-
-`artcraft` selects the original Tauri app; `artcraft-native` selects its separate
-native Rust app. `craft-launcher` selects the `artcraft-launcher` package/binary.
-`craft-repo-status-app` selects the `craft-status-app` package. Shared libraries,
-fonts, assets, CI repositories, corpora and backend services are synchronized as
-repos, but are not standalone desktop app build targets. `placeholder-artcraft` is an
-incomplete historical snapshot: its desktop crate and 100 workspace members are
-absent, so it is synchronized without attempting to reconstruct missing source. Browser/server variants
-are outside this desktop build tool's app selection.
-
-GitHub does not allow forks of repositories with no Git content. AniCraft and
-crafthub were empty when inspected, so their forks could not be created. They are
-not silently treated as buildable apps.
-
-The startup checks use an isolated X display and temporary HOME/XDG data for each
-app, then verify and capture its rendered window. Evidence is saved under `.logs/`.
-They need Xvfb, dbus-run-session, xwininfo, xprop and ImageMagick import/identify.
-They test startup and rendering; they do not prove every editing operation or GPU
-behavior on other platforms.
-
-## Restore the workspace
-
-Clone this tooling repository as the workspace root (for example `~/dev/craft`).
-Install the prerequisites above and authenticate GitHub CLI with `gh auth login`.
-`repositories.txt` records the 24 nonempty upstream repositories used by this
-workspace as of 2026-10-15. To fork or reuse your forks and clone missing checkouts,
-run from the workspace root:
+To test **real built apps** separately on an isolated Linux display:
 
 ```bash
-while IFS= read -r repo; do
-    if [ ! -e "$repo" ]; then
-        gh repo fork "storytold/$repo" --clone --remote || break
-    fi
-done < repositories.txt
-./craft.sh --all
-./install-shortcuts.sh
+xvfb-run -a -s '-screen 0 1440x1000x24' dbus-run-session -- \
+    python3 tests/smoke_apps.py
 ```
 
-Existing directories are left in place. Each checkout needs `origin` pointing to
-your fork and `upstream` pointing to the storytold repository; verify with
-`git -C photocraft remote -v` before updating. The inventory is a dated snapshot;
-new upstream apps require checking their build recipe before registering them.
-The tooling repository itself is updated with `git pull --ff-only` at the root;
-`craft.sh` synchronizes the child repositories.
-
-## Repository contents and checks
-
-Only the orchestration scripts, repository inventory, documentation, and tests
-are versioned. The root `.gitignore` uses an allowlist to keep app checkouts,
-binaries, dependency caches, desktop backups, and runtime logs outside Git.
-Local validation reports are also excluded. Changes to this allowlist should be
-reviewed before adding any new paths.
-
-```bash
-python3 -m unittest discover -s tests -v
-shellcheck craft.sh run-craft.sh install-shortcuts.sh
-```
-
-Offline tests use disposable Git repositories and fake Cargo/npm commands.
-The separate Xvfb smoke command above exercises real built binaries. Its screenshot
-color check is a startup heuristic; inspect the saved images when validating a
-new app or frontend change. Probe subprocesses have bounded timeouts, and a failed
-app is recorded without skipping the remaining apps.
-
-Shortcut path escaping follows the [desktop entry specification](https://specifications.freedesktop.org/desktop-entry/latest/exec-variables.html).
+Pass app names to test a subset. The harness uses temporary user data, checks for
+a visible app-owned window, captures it, and terminates its process group. Inspect
+the saved screenshots: the color check is a rendering heuristic. These checks
+cover startup, not every editing operation, physical GPU, or other platforms.
