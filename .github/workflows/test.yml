@@ -32,6 +32,12 @@ jobs:
         with:
           persist-credentials: false
       - name: Install prerequisites without account authorization
-        run: ./craft setup --no-auth
+        run: |
+          # Exercise the real Node download/checksum path even on preloaded runners.
+          mkdir -p "$RUNNER_TEMP/old-node"
+          printf '#!/bin/sh\nexit 1\n' > "$RUNNER_TEMP/old-node/node"
+          chmod +x "$RUNNER_TEMP/old-node/node"
+          export PATH="$RUNNER_TEMP/old-node:$PATH"
+          ./craft setup --no-auth
       - name: Verify installed prerequisites
         run: ./craft setup --check --no-auth
