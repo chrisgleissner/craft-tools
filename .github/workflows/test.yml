@@ -1,16 +1,37 @@
-name: Tooling checks
-on: [push, pull_request, workflow_dispatch]
+name: Tests
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
 permissions:
   contents: read
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends shellcheck python3-gi gir1.2-glib-2.0
       - name: Offline regression tests
-        run: python3 -m unittest discover -s tests -v
+        run: /usr/bin/python3 -m unittest discover -s tests -v
       - name: ShellCheck
-        run: shellcheck craft.sh run-craft.sh install-shortcuts.sh
+        run: shellcheck craft run-craft install-shortcuts.sh scripts/*.sh
+  setup:
+    name: Clean Ubuntu setup
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install prerequisites without account authorization
+        run: ./craft setup --no-auth
+      - name: Verify installed prerequisites
+        run: ./craft setup --check --no-auth

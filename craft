@@ -2,10 +2,20 @@
 # Update sibling craft forks and build selected desktop apps. Bash 4+.
 set -Eeuo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+export PATH="$ROOT/.build/tools/node/bin:$PATH:$HOME/.cargo/bin"
+if [[ ${1:-} == setup ]]; then
+    shift
+    exec bash "$ROOT/scripts/setup-prerequisites.sh" "$ROOT" "$@"
+fi
 usage() {
     cat <<'EOF'
-Usage: craft.sh [OPTIONS] [APP ...]
+Usage: craft [OPTIONS] [APP ...]
+       craft pull [--no-push]
+       craft setup [--check] [--no-auth]
 Updates ALL sibling forks from upstream, then builds PhotoCraft by default.
+  pull            Discover all storytold Craft repos, fork/clone missing, update all
+  setup           Install prerequisites and configure GitHub authentication
+  setup --check   Check prerequisites without installing or changing anything
   --all           Build every registered desktop app
   --update-only   Update forks without building
   --no-update     Build existing checkouts without fetching or pushing
@@ -15,10 +25,10 @@ Updates ALL sibling forks from upstream, then builds PhotoCraft by default.
   --jobs N        Cargo compilation jobs (default: 4)
   -h, --help      Show this help
 Examples:
-  ./craft.sh
-  ./craft.sh photocraft vectorcraft
-  ./craft.sh --all --release
-  ./craft.sh --update-only
+  ./craft
+  ./craft photocraft vectorcraft
+  ./craft --all --release
+  ./craft --update-only
 Requires Bash 4+, git, flock, tee, and Rust 1.95.0 (rustup). Tauri apps also
 need Node/npm and Linux WebKit/GTK development packages. RUSTUP_TOOLCHAIN
 can override the toolchain. ArtCraft builds its Tauri app; artcraft-native is
@@ -30,7 +40,8 @@ Logs: .logs/    Binaries: .build/target/{debug,release}/
 EOF
 }
 APPS=(photocraft craft-launcher vectorcraft filmcraft effectcraft deckcraft pdfcraft designcraft lightcraft wordcraft artcraft artcraft-native figcraft gridcraft soundcraft cadcraft artcraftx craft-repo-status-app)
-update=1 push=1 build=1 all=0 release=0 jobs=${CARGO_BUILD_JOBS:-4}
+update=1 push=1 build=1 all=0 release=0 discover=0 jobs=${CARGO_BUILD_JOBS:-4}
+if [[ ${1:-} == pull ]]; then discover=1; build=0; shift; fi
 selected=()
 while (($#)); do
     case $1 in
@@ -47,6 +58,10 @@ while (($#)); do
     esac
     shift
 done
+if ((discover && (!update || all || release || ${#selected[@]}))); then
+    echo 'pull accepts --no-push and --jobs; build options and app names are not supported' >&2
+    exit 2
+fi
 [[ $jobs =~ ^[1-9][0-9]*$ ]] || { echo '--jobs must be a positive integer' >&2; exit 2; }
 if ((all)); then
     ((${#selected[@]} == 0)) || { echo 'Use --all or app names, not both' >&2; exit 2; }
@@ -60,7 +75,7 @@ for app in "${selected[@]}"; do
 done
 mkdir -p "$ROOT/.logs" "$ROOT/.build"
 exec 9>"$ROOT/.build/craft.lock"
-flock -n 9 || { echo 'Another craft.sh run is active' >&2; exit 1; }
+flock -n 9 || { echo 'Another craft run is active' >&2; exit 1; }
 run_id=$(date -u +%Y%m%dT%H%M%S)-$$
 log_dir=$ROOT/.logs/$run_id
 mkdir "$log_dir"
@@ -70,7 +85,6 @@ export CARGO_BUILD_JOBS="$jobs"
 # Avoid many gigabytes of dependency debug symbols; explicit user settings win.
 export CARGO_PROFILE_DEV_DEBUG=${CARGO_PROFILE_DEV_DEBUG:-0}
 export CARGO_INCREMENTAL=${CARGO_INCREMENTAL:-0}
-if [[ -d $ROOT/craft-fonts ]]; then export CRAFT_FONTS_DIR=${CRAFT_FONTS_DIR:-$ROOT/craft-fonts}; fi
 sync_repo() (
     set -e
     local repo=$1 branch current target old remote_head
@@ -136,9 +150,26 @@ build_app() (
     if [[ -f apps/$app-cli/Cargo.toml ]]; then ln -sfn "../.build/target/$profile/$app-cli" "$ROOT/bin/$app-cli"; fi
 )
 failed=0
-if ((update)); then
+repos=()
+if ((discover)); then
+    echo '== Discover storytold Craft repositories =='
+    set +e
+    python3 "$ROOT/scripts/discover_repos.py" "$ROOT" "$log_dir/repositories.txt" 2>&1 | tee "$log_dir/discover.log"
+    statuses=("${PIPESTATUS[@]}")
+    set -e
+    if ((statuses[0] || statuses[1])); then failed=1; fi
+    if [[ -f $log_dir/repositories.txt ]]; then
+        while IFS= read -r name; do repos+=("$ROOT/$name"); done < "$log_dir/repositories.txt"
+    fi
+else
     for repo in "$ROOT"/*; do
         [[ -d $repo && ( -d $repo/.git || -f $repo/.git ) ]] || continue
+        repos+=("$repo")
+    done
+fi
+if [[ -d $ROOT/craft-fonts ]]; then export CRAFT_FONTS_DIR=${CRAFT_FONTS_DIR:-$ROOT/craft-fonts}; fi
+if ((update)); then
+    for repo in "${repos[@]}"; do
         name=${repo##*/}
         echo "== Update $name =="
         # Run as a standalone shell so errexit remains active inside sync_repo.

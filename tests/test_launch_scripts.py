@@ -18,7 +18,7 @@ class LaunchScriptsTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.fake = self.root / 'fake'
         self.fake.mkdir()
-        for name in ['run-craft.sh', 'install-shortcuts.sh']:
+        for name in ['run-craft', 'install-shortcuts.sh']:
             shutil.copy2(SOURCE / name, self.root / name)
         self.env = dict(os.environ, HOME=str(self.root), XDG_DATA_HOME=str(self.root / 'data'),
                         XDG_CURRENT_DESKTOP='test', PATH=str(self.fake) + ':' + os.environ['PATH'])
@@ -38,16 +38,16 @@ class LaunchScriptsTests(unittest.TestCase):
         for app, binary in [('photocraft', 'photocraft'), ('craft-launcher', 'artcraft-launcher')]:
             self.executable(self.root / 'bin' / binary,
                             '#!/usr/bin/env python3\nimport json,sys\nprint(json.dumps(sys.argv[1:]))\n')
-            result = self.invoke('run-craft.sh', app, 'file with spaces.pcraft', '--flag')
+            result = self.invoke('run-craft', app, 'file with spaces.pcraft', '--flag')
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(json.loads(result.stdout), ['file with spaces.pcraft', '--flag'])
-        self.assertEqual(self.invoke('run-craft.sh').returncode, 0)
+        self.assertEqual(self.invoke('run-craft').returncode, 0)
 
     def test_missing_binary_and_unknown_app(self):
-        result = self.invoke('run-craft.sh', 'craft-launcher')
+        result = self.invoke('run-craft', 'craft-launcher')
         self.assertEqual(result.returncode, 1)
         self.assertIn('has not been built', result.stderr)
-        self.assertEqual(self.invoke('run-craft.sh', 'unknown').returncode, 2)
+        self.assertEqual(self.invoke('run-craft', 'unknown').returncode, 2)
 
     def test_desktop_entries_and_backup(self):
         result = self.invoke('install-shortcuts.sh')
@@ -55,8 +55,8 @@ class LaunchScriptsTests(unittest.TestCase):
         entries = self.root / 'data/applications'
         photo = entries / 'ai.storyteller.photocraft.desktop'
         launcher = entries / 'ai.storyteller.artcraft-launcher.desktop'
-        self.assertIn(f'Exec="{self.root}/run-craft.sh" photocraft %F', photo.read_text())
-        self.assertIn(f'Exec="{self.root}/run-craft.sh" craft-launcher', launcher.read_text())
+        self.assertIn(f'Exec="{self.root}/run-craft" photocraft %F', photo.read_text())
+        self.assertIn(f'Exec="{self.root}/run-craft" craft-launcher', launcher.read_text())
         before = launcher.read_text()
         self.assertEqual(self.invoke('install-shortcuts.sh').returncode, 0)
         self.assertEqual(launcher.read_text(), before)
@@ -78,7 +78,7 @@ class LaunchScriptsTests(unittest.TestCase):
         self.assertIn('MimeType=image/png;', text)
         self.assertIn('[Desktop Action Custom]', text)
         self.assertIn('Exec=custom %F', text)
-        self.assertIn(f'TryExec={self.root}/run-craft.sh', text)
+        self.assertIn(f'TryExec={self.root}/run-craft', text)
 
     def test_desktop_exec_escapes_special_path_characters(self):
         self.root = self.root / 'path $cash `tick` "quote" \\slash'
@@ -102,7 +102,7 @@ class LaunchScriptsTests(unittest.TestCase):
             self.skipTest('System Python GIO bindings unavailable')
         self.root = self.root / 'path $cash `tick` "quote" \\slash'
         self.root.mkdir()
-        for name in ['run-craft.sh', 'install-shortcuts.sh']:
+        for name in ['run-craft', 'install-shortcuts.sh']:
             shutil.copy2(SOURCE / name, self.root)
         self.executable(self.root / 'bin/artcraft-launcher',
                         '#!/usr/bin/python3\nfrom pathlib import Path\n'
