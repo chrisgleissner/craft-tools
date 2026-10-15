@@ -29,8 +29,7 @@ cd ~/dev/craft
 ./run-craft                    # launch PhotoCraft
 ```
 
-The repository is private: GitHub access is needed to download it. Run the setup
-command without `sudo`; it requests elevated access only for system packages.
+Run the setup command without `sudo`; it requests elevated access only for system packages.
 
 ### Release archive
 
