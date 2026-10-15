@@ -60,6 +60,7 @@ class SetupTests(unittest.TestCase):
         self.fake.mkdir()
         self.state = {}
         self.env = dict(os.environ, HOME=str(self.root / 'home'),
+                        CARGO_HOME=str(self.root / 'home/.cargo'), RUSTUP_HOME=str(self.root / 'home/.rustup'),
                         PATH=f'{self.fake}:/usr/bin:/bin', SETUP_STATE=str(self.root / 'state.json'),
                         SETUP_LOG=str(self.root / 'log.jsonl'), RUSTUP_TOOLCHAIN='1.95.0')
         for name in ['dpkg-query', 'node', 'npm', 'rustup', 'gh', 'sudo', 'apt-get', 'curl', 'sha256sum', 'tar', 'uname']:
