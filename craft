@@ -113,6 +113,26 @@ sync_repo() (
     fi
     if ((push)); then git push origin "$target:refs/heads/$branch"; fi
 )
+# ArtCraft Launcher detects installed Craft App Suite apps by finding <app> in ~/.local/bin.
+# Link built suite apps there so the launcher lists them as installed. A file or link that
+# this workspace does not own is left alone.
+link_for_launcher() {
+    local app=$1 binary=$2 dir=${XDG_BIN_HOME:-$HOME/.local/bin} current
+    case $app in
+        photocraft|vectorcraft|filmcraft|effectcraft|deckcraft|pdfcraft|designcraft|lightcraft|wordcraft|figcraft|gridcraft|soundcraft|cadcraft) ;;
+        *) return 0;;
+    esac
+    mkdir -p "$dir"
+    if [[ -L $dir/$binary ]]; then
+        current=$(readlink "$dir/$binary")
+        [[ $current == "$ROOT/bin/"* ]] || { echo "Leaving $dir/$binary: points outside this workspace" >&2; return 0; }
+    elif [[ -e $dir/$binary ]]; then
+        echo "Leaving $dir/$binary: not a link created by craft" >&2
+        return 0
+    fi
+    ln -sfn "$ROOT/bin/$binary" "$dir/$binary"
+}
+
 build_app() (
     set -e
     local app=$1 package=$1 repo=$1 binary=$1 profile=debug
@@ -148,6 +168,7 @@ build_app() (
     mkdir -p "$ROOT/bin"
     ln -sfn "../.build/target/$profile/$binary" "$ROOT/bin/$binary"
     if [[ -f apps/$app-cli/Cargo.toml ]]; then ln -sfn "../.build/target/$profile/$app-cli" "$ROOT/bin/$app-cli"; fi
+    link_for_launcher "$app" "$binary"
 )
 failed=0
 repos=()
