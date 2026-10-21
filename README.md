@@ -17,10 +17,10 @@ that manage your forks and local builds; it is not an official Craft distributio
 
 ## Quick start
 
-Check out the **v0.1.0** release using your GitHub access, then run:
+Check out the **v0.1.1** release using your GitHub access, then run:
 
 ```bash
-git clone --branch v0.1.0 --depth 1 \
+git clone --branch v0.1.1 --depth 1 \
     https://github.com/chrisgleissner/craft-tools.git ~/dev/craft
 cd ~/dev/craft
 ./craft setup                  # install prerequisites; sign in to GitHub if needed
@@ -38,11 +38,11 @@ with a checksum on the [Releases page](https://github.com/chrisgleissner/craft-t
 If you already use GitHub CLI, you can download and verify it with:
 
 ```bash
-gh release download v0.1.0 --repo chrisgleissner/craft-tools \
-    --pattern craft-tools-v0.1.0.tar.gz --pattern SHA256SUMS
+gh release download v0.1.1 --repo chrisgleissner/craft-tools \
+    --pattern craft-tools-v0.1.1.tar.gz --pattern SHA256SUMS
 sha256sum --check SHA256SUMS
-tar -xzf craft-tools-v0.1.0.tar.gz
-cd craft-tools-v0.1.0
+tar -xzf craft-tools-v0.1.1.tar.gz
+cd craft-tools-v0.1.1
 ./craft setup
 ./craft pull
 ./craft
@@ -102,6 +102,16 @@ To check an existing machine without installing or changing anything:
 Use `--jobs N` to control Cargo parallelism (default **4**). `run-craft` accepts an
 app name followed by arguments to pass through, for example
 `./run-craft photocraft 'photo with spaces.png'`.
+
+### Craft Launcher integration
+
+Craft Launcher decides that an app is installed by finding an executable named after the app
+in `~/.local/bin`, among other locations. After each successful build of a Craft App Suite
+app (PhotoCraft, LightCraft, and the other suite apps), `craft` links `~/.local/bin/<app>` to
+the workspace's `bin/<app>`, so the launcher lists the app as installed and can open it. The
+launcher reports such an app as a system binary and does not offer updates for it; run
+`./craft` to update it. `craft` does not replace an existing file in `~/.local/bin`, or a link
+that points outside this workspace.
 
 ### How discovery works
 
